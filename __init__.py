@@ -1,9 +1,10 @@
 from flask import Flask, render_template, request, redirect, url_for,session
 import sqlite3 as sql
+from flask_bcrypt import Bcrypt
 import os
 
 app = Flask(__name__)
-
+bcrypt = Bcrypt(app)
 
 @app.route('/')
 def home():
@@ -13,19 +14,25 @@ def home():
 # admin site
 @app.route('/admin')
 def admin():
-    return render_template('admin.html')
+    if(session.get("username")=="admin"):
+        return render_template('admin.html')
+    else:
+        return redirect(url_for('login'))
 
 
 # Creating new database
 @app.route('/bus.html')
 def new_student():
-    conn = sql.connect('database.db')
-    print("Opened database successfully")
-    conn.execute(
-        'CREATE TABLE IF NOT EXISTS buses (id INTEGER PRIMARY KEY,name TEXT, source TEXT, destination TEXT, time TEXT, price INT,nos INT,rem INT)')
-    print("Table created successfully")
-    conn.close()
-    return render_template('bus.html')
+    if(session.get("username")=="admin"):
+        conn = sql.connect('database.db')
+        print("Opened database successfully")
+        conn.execute(
+            'CREATE TABLE IF NOT EXISTS buses (id INTEGER PRIMARY KEY,name TEXT, source TEXT, destination TEXT, time TEXT, price INT,nos INT,rem INT)')
+        print("Table created successfully")
+        conn.close()
+        return render_template('bus.html')
+    else:
+        return redirect(url_for('login'))
 
 
 # Adding new bus record
@@ -62,7 +69,10 @@ def addrec():
 # renders template to delete a bus record
 @app.route('/delete.html')
 def deleterecord():
-    return render_template('delete.html')
+    if(session.get("username")=="admin"):
+        return render_template('delete.html')
+    else:
+        return redirect(url_for('login'))
 
 
 # delete the record
@@ -91,7 +101,10 @@ def delrec():
 
 @app.route('/find.html')
 def findrecord():
-    return render_template('find.html')
+    if session.get("username")=="admin":
+        return render_template('find.html')
+    else:
+        return redirect(url_for('login'))
 
 
 # find the record
@@ -117,48 +130,56 @@ def findbus():
 # list all records
 @app.route('/list.html')
 def list():
-    username = session['username']
-    con = sql.connect("database.db")
-    con.row_factory = sql.Row
+    if("username" in session):
+        username = session['username']
+        con = sql.connect("database.db")
+        con.row_factory = sql.Row
 
-    cur = con.cursor()
-    cur.execute("select * from buses")
+        cur = con.cursor()
+        cur.execute("select * from buses")
 
-    rows = cur.fetchall();
-    msg = "LIST OF ALL BUSES"
-    return render_template("list.html", rows=rows, msg=msg, user=username)
+        rows = cur.fetchall();
+        msg = "LIST OF ALL BUSES"
+        return render_template("list.html", rows=rows, msg=msg, user=username)
+    else:
+        return redirect(url_for('login'))
 
 
 # list all buses booked by user
 @app.route('/userbookinglist.html')
 def userbookinglist():
-    username = session['username']
-    pw = session['password']
-    con = sql.connect("database.db")
-    con.row_factory = sql.Row
-    flag = 1  # to prevent find form  displaying
-    cur = con.cursor()
-    cur.execute("select * from user where name=(?) AND pass=(?)", (username, pw))
-    row = cur.fetchone();
-    userid = row[0]
-    cur.execute("select * from book where userid=(?)", (userid,))
-    rows = cur.fetchall();
-    msg = "LIST OF ALL BUSES"
-    return render_template("list.html", rows=rows, msg=msg, user=username, fl=flag)
+    if("username" in session):
+        username = session['username']
+        con = sql.connect("database.db")
+        con.row_factory = sql.Row
+        flag = 1  # to prevent find form  displaying
+        cur = con.cursor()
+        cur.execute("select * from user where name=(?)", (username,))
+        row = cur.fetchone();
+        userid = row[0]
+        cur.execute("select * from book where userid=(?)", (userid,))
+        rows = cur.fetchall();
+        msg = "LIST OF ALL BUSES"
+        return render_template("list.html", rows=rows, msg=msg, user=username, fl=flag)
+    else:
+        return redirect(url_for('login'))
 
 
 @app.route('/bookinglist.html')
 def bookinglist():
-    username = session['username']
-    con = sql.connect("database.db")
-    con.row_factory = sql.Row
+    if(session.get("username")=="admin"):
+        username = session['username']
+        con = sql.connect("database.db")
+        con.row_factory = sql.Row
 
-    cur = con.cursor()
-    cur.execute("select * from book")
+        cur = con.cursor()
+        cur.execute("select * from book")
 
-    rows = cur.fetchall();
-    msg = "LIST OF ALL BUSES"
-    return render_template("list.html", rows=rows, msg=msg, user=username)
+        rows = cur.fetchall();
+        msg = "LIST OF ALL BUSES"
+        return render_template("list.html", rows=rows, msg=msg, user=username)
+    else:
+        return redirect(url_for('login'))
 
 
 
@@ -180,11 +201,13 @@ def new_user():
 def adduser():
     if request.method == 'POST':
         try:
-            nm = request.form['nm']
+            name = request.form['name']
             password = request.form['pass']
+            pw_hash = bcrypt.generate_password_hash(password).decode('utf-8')
+            print(pw_hash)
             with sql.connect("database.db") as con:
                 cur = con.cursor()
-                cur.execute("INSERT INTO user (name,pass) VALUES (?,?)", (nm, password))
+                cur.execute("INSERT INTO user (name,pass) VALUES (?,?)", (name, pw_hash))
                 con.commit()
                 msg = "User record:Record successfully added"
         except:
@@ -224,9 +247,9 @@ def deluserrec():
 @app.route('/user')  # user and admin login
 def user():
     flag = 0
-    if 'username' in session:
-        username = session['username']
-        pw = session['password']
+    if 'username' in session :
+        username = session.get('username')
+        pw = session.get("password")
         if username == 'admin' and pw == 'admin':
             flag = 1
         else:
@@ -234,16 +257,20 @@ def user():
             con.row_factory = sql.Row
 
             cur = con.cursor()
-            cur.execute("SELECT * FROM user WHERE name=(?) AND pass=(?) ", (username, pw))
+            cur.execute("SELECT * FROM user WHERE name=(?) ", (username,))
 
-            rows = cur.fetchone();
+            rows = cur.fetchone()
             if (rows):
-                flag = 2
+                if bcrypt.check_password_hash(rows[2],pw)==False:
+                    flag =3
+                else: flag = 2
         if flag == 1:
             return render_template('admin.html')
         elif flag == 2:
             return render_template('userhome.html', user=username)
-
+        elif flag == 3:
+            return "Incorrect password <br><a href = '/login'></b>" + \
+                   "click here to log in</b></a>"
         else:
             return "You are not logged in as username or password is incorrect <br><a href = '/login'></b>" + \
                    "click here to log in</b></a>"
@@ -265,18 +292,22 @@ def login():
 def logout():
     # remove the username from the session if it is there
     session.pop('username', None)
+    session.pop('password', None)
     return redirect(url_for('user'))
 
 
 @app.route('/book.html')
 def book():
-    conn = sql.connect('database.db')
-    print("Opened database successfully")
-    conn.execute(
-        'CREATE TABLE IF NOT EXISTS book (bookid INTEGER PRIMARY KEY,busid TEXT,busname TEXT,userid TEXT,username TEXT,nopass TEXT)')
-    print("Table created successfully")
-    conn.close()
-    return render_template('find.html')
+    if("username" in session):
+        conn = sql.connect('database.db')
+        print("Opened database successfully")
+        conn.execute(
+            'CREATE TABLE IF NOT EXISTS book (bookid INTEGER PRIMARY KEY,busid TEXT,busname TEXT,userid TEXT,username TEXT,nopass TEXT)')
+        print("Table created successfully")
+        conn.close()
+        return render_template('find.html')
+    else:
+        return redirect(url_for('login'))
 
 
 @app.route('/booking', methods=['POST', 'GET'])
@@ -292,8 +323,7 @@ def booking():
                 busn = bus[1]
                 num_seats = bus[7]
                 username = session['username']
-                pw = session['password']
-                cur.execute("SELECT * FROM user WHERE name=(?) AND pass=(?) ", (username, pw))
+                cur.execute("SELECT * FROM user WHERE name=(?)", (username,))
                 rows = cur.fetchone();
                 user = rows[0]
                 un = rows[1]
@@ -314,62 +344,65 @@ def booking():
 
 @app.route('/cancel.html')
 def cancel():
-    conn = sql.connect('database.db')
-    print("Opened database successfully")
-    conn.execute(
-        'CREATE TABLE IF NOT EXISTS cancel (canid INTEGER PRIMARY KEY,bookid TEXT,busid TEXT,busname TEXT,userid TEXT,username TEXT,nopass TEXT)')
-    print("Table created successfully")
-    conn.close()
-    con = sql.connect("database.db")
-    con.row_factory = sql.Row
-    cur = con.cursor()
-    username = session['username']
-    pw = session['password']
-    cur.execute("SELECT * FROM user WHERE name=(?) AND pass=(?) ", (username, pw))
-    rows = cur.fetchone();
-    user = rows[0]
+    if("username" in session):
+        conn = sql.connect('database.db')
+        print("Opened database successfully")
+        conn.execute(
+            'CREATE TABLE IF NOT EXISTS cancel (canid INTEGER PRIMARY KEY,bookid TEXT,busid TEXT,busname TEXT,userid TEXT,username TEXT,nopass TEXT)')
+        print("Table created successfully")
+        conn.close()
+        con = sql.connect("database.db")
+        con.row_factory = sql.Row
+        cur = con.cursor()
+        username = session['username']
+        cur.execute("SELECT * FROM user WHERE name=(?)", (username,))
+        rows = cur.fetchone();
+        user = rows[0]
 
-    cur.execute("SELECT * FROM book WHERE userid=(?)", (user))
+        cur.execute("SELECT * FROM book WHERE userid=(?)", (user,))
 
-    rows = cur.fetchall();
-    username = session['username']
-    if (rows):
-        msg = "LIST OF BUSES FOR BOOKED BY YOU"
-        return render_template("cancel.html", rows=rows, msg=msg)
+        rows = cur.fetchall();
+        if (rows):
+            msg = "LIST OF BUSES FOR BOOKED BY YOU"
+            return render_template("cancel.html", rows=rows, msg=msg)
+        else:
+            msg = "NO BUSES BOOKED"
+            return render_template("result.html", msg=msg, user=username)
+        con.close()
     else:
-        msg = "NO BUSES BOOKED"
-        return render_template("result.html", msg=msg, user=username)
-    con.close()
+        return redirect(url_for('login'))
 
 
 @app.route('/canceling', methods=['POST', 'GET'])
 def canceling():
-    if request.method == 'POST':
-        try:
-            canid = request.form['id']
-            with sql.connect("database.db") as con:
-                cur = con.cursor()
-                cur.execute("SELECT * FROM book WHERE bookid=(?)", (canid,))
-                can = cur.fetchone()
-                nop = can[5]
-                cur.execute("INSERT INTO cancel (bookid,busid,busname,userid,username,nopass) VALUES (?,?,?,?,?,?)",
-                            (can[0], can[1], can[2], can[3], can[4], can[5]))
-                cur.execute("SELECT * FROM buses WHERE id=(?)", (can[1]))
-                bus = cur.fetchone()
-                rem = bus[7]
-                new_rem = int(rem) + int(nop)
-                cur.execute("UPDATE buses SET rem=(?) WHERE id=(?)", (new_rem, can[1]))
-                cur.execute("DELETE FROM book WHERE bookid=(?)", (canid,))
-                con.commit()
-                msg = "canceling success"
-        except:
-            con.rollback()
-            msg = "error in insert operation"
+    if("username" in session):
+        if request.method == 'POST':
+            try:
+                canid = request.form['id']
+                with sql.connect("database.db") as con:
+                    cur = con.cursor()
+                    cur.execute("SELECT * FROM book WHERE bookid=(?)", (canid,))
+                    can = cur.fetchone()
+                    nop = can[5]
+                    cur.execute("INSERT INTO cancel (bookid,busid,busname,userid,username,nopass) VALUES (?,?,?,?,?,?)",
+                                (can[0], can[1], can[2], can[3], can[4], can[5]))
+                    cur.execute("SELECT * FROM buses WHERE id=(?)", (can[1]))
+                    bus = cur.fetchone()
+                    rem = bus[7]
+                    new_rem = int(rem) + int(nop)
+                    cur.execute("UPDATE buses SET rem=(?) WHERE id=(?)", (new_rem, can[1]))
+                    cur.execute("DELETE FROM book WHERE bookid=(?)", (canid,))
+                    con.commit()
+                    msg = "canceling success"
+            except:
+                con.rollback()
+                msg = "error in insert operation"
 
-        finally:
-            return render_template("result.html", msg=msg)
-            con.close()
-
+            finally:
+                return render_template("result.html", msg=msg)
+                con.close()
+    else:
+        return redirect(url_for('login'))
 
 if __name__ == '__main__':
     app.secret_key = os.urandom(24)
